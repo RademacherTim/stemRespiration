@@ -1,0 +1,67 @@
+---
+title: "ProcessRespirationData"
+author: "Tim T. Rademacher"
+date: "May 20, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Processing respiration data in R
+
+This document describes how to process respiration data recorded with a LICOR-820 using a custom made application. The data is processed using functions from the `'RespChamberProc'` package.
+
+## Load packages and dependencies
+
+First, we install and load all dependencies (segmented and tibble) and the R functions from `'RespChamberProc'` package.
+```{r installDependencies, include = FALSE}
+install.packages ('segmented', repos = 'http://cran.us.r-project.org')
+install.packages ('tibble',    repos = 'http://cran.us.r-project.org')
+```
+``` {load dependencies, echo = TRUE}
+library ('segmented')
+library ('tibble')
+readFunctions <- function (x) { 
+                   Rfiles <<- list.files (path = '../RespChamberProc/R/')
+                   source (paste ('../RespChamberProc/R/', Rfiles [x], sep = ''))
+}
+res <- sapply (c(1:4,6:12), readFunctions)
+```
+
+## Read the data
+
+In the working directory there is a folder `'data/'` with the data files. The files are in two formats. The first output format from the LICOR app, which can be read in using the `'readDat'` function form the `'RespChamberProc'` package. The second output format is from the `'CO2 Flux Application'` and can be read in using the `'readApp'` function. 
+
+``` {r readDataFunction}
+readApp <- function (fileName) {
+  raw <- read.csv (file = paste ('../data/', fileName, sep = ''))
+  names (raw) <- c ('Time.S', 'CO2', 'H20', 'Temperature', 'Pressure')
+  return (raw)
+}
+```
+``` {r setting, echo = F}
+siteName   <- 'Exp2017'
+chamberID  <- '02p4p2'
+sampleDate <- as.POSIXct ('20180509', format = '%Y%m%d')
+sampleTime <- as.POSIXct ('161645',   format = '%H%M%S')
+```
+
+The naming convention for the second type of files are `'G-'` for data (the respective metadata is file starting with `'M-'`), `'siteName'` such as `siteName`, `'chamberID'` such as `chamberID`, the `'sampleDate'` in `'%Y%m%d'` format such as `sampleDate`, and the `'sampleTime'` in `'%H%M%S'` format such as `sampleTime`. The examples would combine to "`r paste ('G-',siteName,'_',chamberID,'_',format (sampleDate, format = '%Y%m%d'),'_',format (sampleTime, format = '%H%M%S'),'.csv', sep = '')`", as these files are in csv format. 
+
+``` {r readData}
+fileName  <- paste ('G-',siteName,'_',chamberID,'_',format (sampleDate, format = '%Y%m%d'),'_',format (sampleTime, format = '%H%M%S'),'.csv', sep = '')
+raw <- readApp (fileName)
+```
+
+The first processing step is to plot the CO2 data and determine the appropriate window to analyse.
+
+``` {r plotRaw, echo = F}
+plot (x = raw$Time.S,
+      y = raw$CO2,
+      xlab = 'time [s]',
+      ylab = 'CO2 concentration [ppm]')
+```
+
+# Next step is to find a file with data that is not just a clean straight.
