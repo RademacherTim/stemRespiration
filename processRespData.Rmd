@@ -6,7 +6,9 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+library (knitr)
+knitr::opts_chunk$set (cache = TRUE, autodep = TRUE)
+dep_auto ()
 ```
 
 ## Processing respiration data in R
@@ -20,40 +22,58 @@ First, we install and load all dependencies (segmented and tibble) and the R fun
 install.packages ('segmented', repos = 'http://cran.us.r-project.org')
 install.packages ('tibble',    repos = 'http://cran.us.r-project.org')
 ```
-``` {load dependencies, echo = TRUE}
+``` {r loadDependencies, include = FALSE}
 library ('segmented')
 library ('tibble')
-readFunctions <- function (x) { 
-                   Rfiles <<- list.files (path = '../RespChamberProc/R/')
-                   source (paste ('../RespChamberProc/R/', Rfiles [x], sep = ''))
-}
-res <- sapply (c(1:4,6:12), readFunctions)
+fileList <- list.files (path = normalizePath ('../RespChamberProc/R/'))
+fileList <- paste ('./', fileList [-5], sep = '')
+sapply (fileList, source, .GlobalEnv)
+#readFunctions <- function (x) { 
+#                   
+#                   source (normalizePath (paste ('../RespChamberProc/R/', Rfiles [x], sep = '')), keep.source = TRUE)
+#                   closeAllConnections ()
+#}
+#res <- sapply (c(1:4,6:12), readFunctions)
 ```
 
 ## Read the data
 
 In the working directory there is a folder `'data/'` with the data files. The files are in two formats. The first output format from the LICOR app, which can be read in using the `'readDat'` function form the `'RespChamberProc'` package. The second output format is from the `'CO2 Flux Application'` and can be read in using the `'readApp'` function. 
 
-``` {r readDataFunction}
-readApp <- function (fileName) {
+``` {r readDataFunction, include = FALSE}
+readApp <- function (siteName, chamberID, sampleDate) {
+  fileName  <-  list.files (path = '../data/',
+                            pattern = paste ('G-',siteName,'_',chamberID,'_',format (sampleDate, format = '%Y%m%d'),'_', sep = ''))
   raw <- read.csv (file = paste ('../data/', fileName, sep = ''))
-  names (raw) <- c ('Time.S', 'CO2', 'H20', 'Temperature', 'Pressure')
+  names (raw) <- c ('Time.S', 'CO2.ppm', 'H20.ppm', 'Temperature.C', 'Pressure.kPa')
   return (raw)
 }
 ```
-``` {r setting, echo = F}
-siteName   <- 'Exp2017'
-chamberID  <- '02p4p2'
-sampleDate <- as.POSIXct ('20180509', format = '%Y%m%d')
-sampleTime <- as.POSIXct ('161645',   format = '%H%M%S')
+``` {r defineChamber, echo = T}
+studyName     <- 'Exp2017'
+treeID        <- 10
+treatment     <- 3
+chamberNumber <- 3
+chamberID     <- paste (treeID,'p',treatment,'p',chamberNumber,sep = '')
+samplingDate  <- as.POSIXct ('20180509', format = '%Y%m%d')
 ```
 
-The naming convention for the second type of files are `'G-'` for data (the respective metadata is file starting with `'M-'`), `'siteName'` such as `siteName`, `'chamberID'` such as `chamberID`, the `'sampleDate'` in `'%Y%m%d'` format such as `sampleDate`, and the `'sampleTime'` in `'%H%M%S'` format such as `sampleTime`. The examples would combine to "`r paste ('G-',siteName,'_',chamberID,'_',format (sampleDate, format = '%Y%m%d'),'_',format (sampleTime, format = '%H%M%S'),'.csv', sep = '')`", as these files are in csv format. 
+The naming convention for the second type of files are `'G-'` for data (the respective metadata is file starting with `'M-'`), `'siteName'` such as `r studyName`, `'chamberID'` such as `r chamberID`, the `'sampleDate'` in `'%Y%m%d'` format such as `r samplingDate`, and the `'sampleTime'` in `'%H%M%S'` format such as `'161456'`. The examples would combine to "`r paste ('G-',studyName,'_',chamberID,'_',format (samplingDate, format = '%Y%m%d'),'_161456.csv', sep = '')`", as these files are in csv format. 
 
 ``` {r readData}
-fileName  <- paste ('G-',siteName,'_',chamberID,'_',format (sampleDate, format = '%Y%m%d'),'_',format (sampleTime, format = '%H%M%S'),'.csv', sep = '')
-raw <- readApp (fileName)
+raw <- readApp (siteName = studyName, chamberID = chamberID, sampleDate = samplingDate)
 ```
+
+We also need to extract the exact time from the file name and combine it with the date. I am currently assuming that the app saves time as EDT and not EST.
+``` {r getTimeOfMeasurement}
+fileName  <-  list.files (path = '../data/', pattern = paste ('G-',studyName,'_',chamberID,'_',format (samplingDate, format = '%Y%m%d'),'_', sep = ''))
+Time.H.M.S <- (substr (fileName, nchar (fileName)-10+1, nchar (fileName)-4))
+Time.H.M.S
+dateAndTime <- strptime (paste (samplingDate, Time.H.M.S), format = '%Y-%m-%d %H%M%S')
+dateAndTime
+```
+
+# Pre-processing data
 
 The first processing step is to plot the CO2 data and determine the appropriate window to analyse.
 
@@ -61,7 +81,98 @@ The first processing step is to plot the CO2 data and determine the appropriate 
 plot (x = raw$Time.S,
       y = raw$CO2,
       xlab = 'time [s]',
-      ylab = 'CO2 concentration [ppm]')
+      ylab = 'CO2 concentration [ppm]',
+      col = '#91b9a4')
 ```
 
-# Next step is to find a file with data that is not just a clean straight.
+Sometimes, like in this example, there will be some lag because the measurement started before the chamber was closed and attained a dynamic equilibrium. We can use the `'selectData'` function to select only the data after the lag.
+
+``` {r SelectData}
+selectData <- function (ds = raw, colConc = 'CO2.ppm', colTime = 'Time.S', lowerBound = 0, upperBound = 1e6) {
+  # make sure upperBound is not higher than the length of the time series
+  upperBound <- min (upperBound, max (ds [[colTime]]))
+  # make sure lowerBound is not lower than the starting point of the time series
+  lowerBound <- max (lowerBound, min (ds [[colTime]]))
+  # select appropriate data
+  dat <- ds [(ds [[colTime]] >= lowerBound) & 
+             (ds [[colTime]] <= upperBound), ]
+  cut <- ds [(ds [[colTime]] < lowerBound) | 
+             (ds [[colTime]] > upperBound), ]
+  # plot data
+  plot (x = ds [[colTime]],
+        y = ds [[colConc]],
+        xlab = 'time [s]',
+        ylab = 'CO2 concentration [ppm]')
+  # plot selected data bounds
+  points (x = dat [[colTime]],
+          y = dat [[colConc]],
+          col  = '#91b9a499',
+          pch  = 19,
+          cex  = 0.9)
+  rect (xleft   = lowerBound, 
+        xright  = upperBound,
+        ybottom = 0,
+        ytop    = 100000,
+        col     = '#91b9a411',
+        border  = '#901C3B')
+  # plot highlight cut data
+  points (x = cut [[colTime]],
+          y = cut [[colConc]],
+          col  = '#901C3B99',
+          pch  = 19,
+          cex  = 0.9)
+  rect (xleft   = 0, 
+        xright  = lowerBound,
+        ybottom = 0,
+        ytop    = 100000,
+        col     = '#901C3B11',
+        lty     = 0)
+  return (dat)
+}
+dat <- selectData (ds = raw, 
+                   lowerBound = 17,
+                   upperBound = 89)
+```
+
+There is another option with the `r 'selectDataAfterLag'` function from the `r 'RespChamberProc'` package, which does select data after a lag automatically, but I prefer concatenating data at both ends as necessary.
+
+Now we got a cleaned time series, we can calcualte the chamber geometry using the appropriate chamber geometry function (either `r 'chamberGeometryCuboid'` or `r 'chamberGeometryCylinder'`). My chambers were cylinders with a radius of roughly 2" or 5cm and a height of roughly 4" or 10cm.
+
+``` {r chamberVolume}
+chamberGeometry <- calcChamberGeometryCylinder (radius = 0.0508,
+                                                height = 0.1016,
+                                                taper  = 1.0)
+```
+
+This results in a chamber volume of `r chamberGeometry [1]`m<sup>3</sup>. 
+
+# Meteorological data
+To adjust for air temperature (`r 'airt'`), atmospheric pressure (`r 'presPa'`) and relative humidity (`r 'rh'`), we need some meteorological data. Here, we use data from Fisher meteorological station at Harvard Forest, which we can download from the HF archives. The archives are currently down, so we will skip this step for now.
+``` {r metData} 
+#met_HF <- read.csv (file = url ('http://harvardforest.fas.harvard.edu/data/p00/hf001/hf001-10-15min-m.csv'))
+#met_HF <- read.csv (file = url ('http://harvardforest.fas.harvard.edu/sites/harvardforest.fas.harvard.edu/files/weather/qfm.csv'))
+#met_HF$TIMESTAMP <- as.POSIXct (met_HF$datetime, 
+#                                format = '%Y-%m-%dT%H:%M',
+#                                tz = 'EST') 
+
+# Determine which measurement to use, N.B. data is named after the time at the end of the 15 minute interval
+#upper_bound <- as.POSIXct (x      = round (as.numeric (median (raw$Time.S)) / (15 * 60)) * (15 * 60) + (15 * 60), 
+#                           format = '%Y-%m-%d %H:%M:%S',
+#                           origin = as.POSIXct ("1970-01-01", format = '%Y-%m-%d', tz = 'UTC'), 
+#                           tz = 'EST')
+#presPa <- met_HF$bar  [met_HF$TIMESTAMP == upper_bound] * 100.0 # Pa
+#airt   <- met_HF$airt [met_HF$TIMESTAMP == upper_bound]         # deg C
+#rh     <- met_HF$rh   [met_HF$TIMESTAMP == upper_bound]         # %
+```
+
+With the meteorlogical data we can determine absolute water vapour pressure (in parts per thousand) and add it and the otehr meteorological variables to the raw respiration data.frame.
+
+``` {r waterVapourPressure}
+  # Calculate saturation water vapour pressure (esat) to convert relative humidity
+#  es <- 0.61078 * exp ((17.269 * airt) / (237.3 + airt)) * 1000 # saturated water pressure [Pa]
+#  ea <- es * rh / 100.0                                         # get actual water vapour pressure [Pa]
+#  raw$ea      <- rep (ea,     length (raw [, 1]))
+#  raw$airt    <- rep (airt,   length (raw [, 1]))
+#  raw$presPa  <- rep (presPa, length (raw [, 1]))
+#  raw$H2O.ppt <- raw$ea / (raw$presPa - raw$ea) * 1.0e3
+  ```
