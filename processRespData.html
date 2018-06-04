@@ -215,11 +215,15 @@ dat &lt;- selectData (ds = raw,
 <div id="obtain-and-process-suitable-meteorological-data" class="section level1">
 <h1>Obtain and process suitable meteorological data</h1>
 <p>To adjust for air temperature (airt.C), atmospheric pressure (pres.Pa) and relative humidity (rh.per), we need some meteorological data. Here, we use data from Fisher meteorological station at Harvard Forest, which we can download from the HF archives. The archives are currently down, so we will skip this step for now.</p>
-<pre class="r"><code>#met_HF &lt;- read.csv (file = url ('http://harvardforest.fas.harvard.edu/data/p00/hf001/hf001-10-15min-m.csv'))
-#met_HF &lt;- read.csv (file = url ('http://harvardforest.fas.harvard.edu/sites/harvardforest.fas.harvard.edu/files/weather/qfm.csv'))
-#met_HF$TIMESTAMP &lt;- as.POSIXct (met_HF$datetime, 
-#                                format = '%Y-%m-%dT%H:%M',
-#                                tz = 'EST') 
+<pre class="r"><code># Get appropriate meterological data
+if (samplingDate &lt; as.POSIXct ('2018-04-01', format = '%Y-%m-%d')) {
+  met_HF &lt;- read.csv (file = url ('http://harvardforest.fas.harvard.edu/sites/harvardforest.fas.harvard.edu/files/data/p00/hf001/hf001-10-15min-m.csv'))
+} else if (samplingDate &gt;= as.POSIXct ('2018-04-01', format = '%Y-%m-%d')) {
+  met_HF &lt;- read.csv (file = url ('http://harvardforest.fas.harvard.edu/sites/harvardforest.fas.harvard.edu/files/weather/qfm.csv'))
+}
+met_HF$TIMESTAMP &lt;- as.POSIXct (met_HF$datetime, 
+                                format = '%Y-%m-%dT%H:%M',
+                                tz = 'EST') 
 
 # Determine which measurement to use, N.B. data is named after the time at the end of the 15 minute interval
 upper_bound &lt;- as.POSIXct (x      = round (as.numeric (median (dateAndTime + raw$Time.S))/
@@ -227,25 +231,26 @@ upper_bound &lt;- as.POSIXct (x      = round (as.numeric (median (dateAndTime + 
                            format = '%Y-%m-%d %H:%M:%S',
                            origin = as.POSIXct (&quot;1970-01-01&quot;, format = '%Y-%m-%d', tz = 'UTC'), 
                            tz = 'EST')
-#pres.Pa &lt;- met_HF$bar  [met_HF$TIMESTAMP == upper_bound] * 100.0 # Pa
-#airt.C  &lt;- met_HF$airt [met_HF$TIMESTAMP == upper_bound]         # deg C
-#rh.per  &lt;- met_HF$rh   [met_HF$TIMESTAMP == upper_bound]         # %</code></pre>
+
+pres.Pa &lt;- met_HF$bar  [met_HF$TIMESTAMP == upper_bound] * 100.0 # Pa
+airt.C  &lt;- met_HF$airt [met_HF$TIMESTAMP == upper_bound]         # deg C
+rh.per  &lt;- met_HF$rh   [met_HF$TIMESTAMP == upper_bound]         # %</code></pre>
 <p>With the meteorological data we can determine absolute water vapour pressure (in parts per thousand) and add it and the other meteorological variables to the raw respiration data.frame.</p>
 <pre class="r"><code># Calculate saturation water vapour pressure (esat) to convert relative humidity
-#es.Pa &lt;- 0.61078 * exp ((17.269 * airt.C) / (237.3 + airt.c)) * 1000 # saturated water pressure [Pa]
-#ea.Pa &lt;- es.Pa * rh.per / 100.0                                         # get actual water vapour pressure [Pa]
-#  raw$ea.Pa   &lt;- rep (ea.Pa,   length (raw [, 1]))
-#  raw$airt.C  &lt;- rep (airt.C,  length (raw [, 1]))
-#  raw$pres.Pa &lt;- rep (pres.Pa, length (raw [, 1]))
-#  raw$H2O.ppt &lt;- raw$ea.Pa / (raw$pres.Pa - raw$ea.Pa) * 1.0e3</code></pre>
+es.Pa &lt;- 0.61078 * exp ((17.269 * airt.C) / (237.3 + airt.C)) * 1000 # saturated water pressure [Pa]
+ea.Pa &lt;- es.Pa * rh.per / 100.0                                         # get actual water vapour pressure [Pa]
+raw$ea.Pa   &lt;- rep (ea.Pa,   length (raw [, 1]))   # add actual water vapour pressure [Pa] to raw data.frame
+raw$airt.C  &lt;- rep (airt.C,  length (raw [, 1]))   # add air temperature [degC] to raw data.frame
+raw$pres.Pa &lt;- rep (pres.Pa, length (raw [, 1]))   # add atmospheric pressure [Pa] to raw data.frame
+raw$H2O.ppt &lt;- raw$ea.Pa / (raw$pres.Pa - raw$ea.Pa) * 1.0e3   # add actual water vapour pressure [ppt] to raw data.frame</code></pre>
 <div id="process-data-to-estimate-respiration-flux" class="section level2">
 <h2>Process data to estimate respiration flux</h2>
-<p>We can then correct for the atmospheric water vapour pressure (H2O.ppt) to get the CO<sub>2</sub> concentration of dry air (CO2.dry).</p>
+<p>We can then correct for the atmospheric water vapour pressure (<code>'H2O.ppt'</code>) to get the CO<sub>2</sub> concentration of dry air (<code>'CO2.dry'</code>).</p>
 <pre class="r"><code># Correct CO2 concentration for water vapour
 #raw$CO2.dry &lt;- corrConcDilution (raw, 
 #                                 colConc   = 'CO2.ppm',
 #                                 colVapour = 'H2O.ppt')</code></pre>
-<p>From the dry concentration of CO<sub>2</sub> in dry air (raw<span class="math inline">\(CO2.dry), the chamber size, the air temperature (raw\)</span>tair.C) and the atmospheric (raw$pres.Pa) at the time we can calculate the respiration flux using the calcClosedChamberFlux of the RespChamberProc package.</p>
+<p>From the dry concentration of CO<sub>2</sub> in dry air (<code>'raw$CO2.dry'</code>), the chamber size, the air temperature (<code>'raw$tair.C'</code>) and the atmospheric (<code>'raw$pres.Pa'</code>) at the time we can calculate the respiration flux using the <code>'calcClosedChamberFlux'</code> of the <code>'RespChamberProc'</code> package.</p>
 <pre class="r"><code># Calculate chamber flux for entire timeseries
 #resfit &lt;- calcClosedChamberFlux (raw,
 #                                 colConc     = 'CO2.dry',

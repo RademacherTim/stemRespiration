@@ -147,11 +147,15 @@ This results in a chamber volume of `r format (round (chamberGeometry [1], 5), n
 # Obtain and process suitable meteorological data
 To adjust for air temperature (`r 'airt.C'`), atmospheric pressure (`r 'pres.Pa'`) and relative humidity (`r 'rh.per'`), we need some meteorological data. Here, we use data from Fisher meteorological station at Harvard Forest, which we can download from the HF archives. The archives are currently down, so we will skip this step for now.
 ``` {r metData} 
-#met_HF <- read.csv (file = url ('http://harvardforest.fas.harvard.edu/data/p00/hf001/hf001-10-15min-m.csv'))
-#met_HF <- read.csv (file = url ('http://harvardforest.fas.harvard.edu/sites/harvardforest.fas.harvard.edu/files/weather/qfm.csv'))
-#met_HF$TIMESTAMP <- as.POSIXct (met_HF$datetime, 
-#                                format = '%Y-%m-%dT%H:%M',
-#                                tz = 'EST') 
+# Get appropriate meterological data
+if (samplingDate < as.POSIXct ('2018-04-01', format = '%Y-%m-%d')) {
+  met_HF <- read.csv (file = url ('http://harvardforest.fas.harvard.edu/sites/harvardforest.fas.harvard.edu/files/data/p00/hf001/hf001-10-15min-m.csv'))
+} else if (samplingDate >= as.POSIXct ('2018-04-01', format = '%Y-%m-%d')) {
+  met_HF <- read.csv (file = url ('http://harvardforest.fas.harvard.edu/sites/harvardforest.fas.harvard.edu/files/weather/qfm.csv'))
+}
+met_HF$TIMESTAMP <- as.POSIXct (met_HF$datetime, 
+                                format = '%Y-%m-%dT%H:%M',
+                                tz = 'EST') 
 
 # Determine which measurement to use, N.B. data is named after the time at the end of the 15 minute interval
 upper_bound <- as.POSIXct (x      = round (as.numeric (median (dateAndTime + raw$Time.S))/
@@ -159,21 +163,22 @@ upper_bound <- as.POSIXct (x      = round (as.numeric (median (dateAndTime + raw
                            format = '%Y-%m-%d %H:%M:%S',
                            origin = as.POSIXct ("1970-01-01", format = '%Y-%m-%d', tz = 'UTC'), 
                            tz = 'EST')
-#pres.Pa <- met_HF$bar  [met_HF$TIMESTAMP == upper_bound] * 100.0 # Pa
-#airt.C  <- met_HF$airt [met_HF$TIMESTAMP == upper_bound]         # deg C
-#rh.per  <- met_HF$rh   [met_HF$TIMESTAMP == upper_bound]         # %
+
+pres.Pa <- met_HF$bar  [met_HF$TIMESTAMP == upper_bound] * 100.0 # Pa
+airt.C  <- met_HF$airt [met_HF$TIMESTAMP == upper_bound]         # deg C
+rh.per  <- met_HF$rh   [met_HF$TIMESTAMP == upper_bound]         # %
 ```
 
 With the meteorological data we can determine absolute water vapour pressure (in parts per thousand) and add it and the other meteorological variables to the raw respiration data.frame.
 
 ``` {r waterVapourPressure}
 # Calculate saturation water vapour pressure (esat) to convert relative humidity
-#es.Pa <- 0.61078 * exp ((17.269 * airt.C) / (237.3 + airt.c)) * 1000 # saturated water pressure [Pa]
-#ea.Pa <- es.Pa * rh.per / 100.0                                         # get actual water vapour pressure [Pa]
-#  raw$ea.Pa   <- rep (ea.Pa,   length (raw [, 1]))
-#  raw$airt.C  <- rep (airt.C,  length (raw [, 1]))
-#  raw$pres.Pa <- rep (pres.Pa, length (raw [, 1]))
-#  raw$H2O.ppt <- raw$ea.Pa / (raw$pres.Pa - raw$ea.Pa) * 1.0e3
+es.Pa <- 0.61078 * exp ((17.269 * airt.C) / (237.3 + airt.C)) * 1000 # saturated water pressure [Pa]
+ea.Pa <- es.Pa * rh.per / 100.0                                         # get actual water vapour pressure [Pa]
+raw$ea.Pa   <- rep (ea.Pa,   length (raw [, 1]))   # add actual water vapour pressure [Pa] to raw data.frame
+raw$airt.C  <- rep (airt.C,  length (raw [, 1]))   # add air temperature [degC] to raw data.frame
+raw$pres.Pa <- rep (pres.Pa, length (raw [, 1]))   # add atmospheric pressure [Pa] to raw data.frame
+raw$H2O.ppt <- raw$ea.Pa / (raw$pres.Pa - raw$ea.Pa) * 1.0e3   # add actual water vapour pressure [ppt] to raw data.frame
 ```
 
 ## Process data to estimate respiration flux 
@@ -181,7 +186,7 @@ With the meteorological data we can determine absolute water vapour pressure (in
 # Add a column with time in seconds
 raw$TIMESTAMP <- dateAndTime + raw$Time.S 
 ```
-We can then correct for the atmospheric water vapour pressure  (`r 'H2O.ppt'`) to get the CO<sub>2</sub> concentration of dry air  (`r 'CO2.dry'`).
+We can then correct for the atmospheric water vapour pressure  (`'H2O.ppt'`) to get the CO<sub>2</sub> concentration of dry air  (`'CO2.dry'`).
 
 ``` {R correctForWaterVapourPressure}
 # Correct CO2 concentration for water vapour
@@ -190,7 +195,7 @@ We can then correct for the atmospheric water vapour pressure  (`r 'H2O.ppt'`) t
 #                                 colVapour = 'H2O.ppt')
 ```
 
-From the dry concentration of CO<sub>2</sub> in dry air (`r 'raw$CO2.dry'`), the chamber size, the air temperature  (`r 'raw$tair.C'`) and the atmospheric (`r 'raw$pres.Pa'`) at the time we can calculate the respiration flux using the  `r 'calcClosedChamberFlux'` of the `r 'RespChamberProc'` package.
+From the dry concentration of CO<sub>2</sub> in dry air (` 'raw$CO2.dry'`), the chamber size, the air temperature  (` 'raw$tair.C'`) and the atmospheric (`'raw$pres.Pa'`) at the time we can calculate the respiration flux using the  `'calcClosedChamberFlux'` of the `'RespChamberProc'` package.
 
 ``` {r calculateChamberFlux}
 # Calculate chamber flux for entire timeseries
