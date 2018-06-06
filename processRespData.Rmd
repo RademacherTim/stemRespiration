@@ -219,18 +219,31 @@ plotResp (dat,
           label = paste (studyName, paste (treeID,'p',treatment,'p',chamberNumber,sep = ''),dateAndTime))
 ```
 
-If there is no problem, we want to save the plot and the fit to a data structure with the results. 
+If there is no problem, we want to save the plot and the fit to a data structure with the results in the `'fig/'` directory. 
 
 ``` {r savePlotFit, echo = T}
-fileName
-nchar (fileName)
-fileName2 <- (substr (fileName, nchar (fileName)-4, nchar (fileName)))
-paste ('fig/',fileName2, sep = '')
-#png (file = paste ('fig/',fileName,'2', sep = ''))
-#plotResp (dat, 
-#          resFlux = resFit,
-#          colConc = 'CO2.dry',   # redundant
-#          colTime = 'TIMESTAMP', # redundant
-#          label = paste (studyName, paste (treeID,'p',treatment,'p',chamberNumber,sep = ''),dateAndTime))
-#dev.off ()
+fileName2 <- substr (fileName, 1, nchar (fileName)-4)
+png (file = paste ('fig/',fileName2,'.png', sep = ''))
+plotResp (dat, 
+          resFlux = resFit,
+          colConc = 'CO2.dry',   # redundant
+          colTime = 'TIMESTAMP', # redundant
+          label = paste (studyName, paste (treeID,'p',treatment,'p',chamberNumber,sep = ''),dateAndTime))
+dev.off ()
+```
+
+Now, we can add the resulting fit (`'resFit'`) to the data.frame containning site names, etc.
+
+## Processing multiple files
+
+If you have multiple files, you may want to analyse all of them and add the results to a single data.frame. For the example, here I assume that all `csv` files in the `data/` directory are intended to be analysed. First, you make a list of all files in the `data/` directory.
+
+``` {r readInFileNames}
+# Create list of all csv files in the data/ directory 
+fileNames <- list.files (path = '../data/', pattern = '.csv')
+# Isolate the important part of the string
+tmp <- unlist (strsplit (fileNames, '_'))
+datestr <- tmp [seq (3, length (tmp), 4)]
+timestr <- tmp [seq (4, length (tmp), 4)]
+timestr <- substring (timestr, 1, nchar (timestr) - 4)
 ```
