@@ -309,12 +309,19 @@ dev.off ()</code></pre>
 <h2>Processing multiple files</h2>
 <p>If you have multiple files, you may want to analyse all of them and add the results to a single data.frame. For the example, here I assume that all <code>csv</code> files in the <code>data/</code> directory are intended to be analysed. First, you make a list of all files in the <code>data/</code> directory.</p>
 <pre class="r"><code># Create list of all csv files in the data/ directory 
-fileNames &lt;- list.files (path = '../data/', pattern = '.csv')
-# Isolate the important part of the string
+fileNames &lt;- list.files (path = '../data/', pattern = '.csv')</code></pre>
+<p>Next, dates and times for all files are extracted.</p>
+<pre class="r"><code># Isolate the important part of the string
 tmp &lt;- unlist (strsplit (fileNames, '_'))
 datestr &lt;- tmp [seq (3, length (tmp), 4)]
 timestr &lt;- tmp [seq (4, length (tmp), 4)]
-timestr &lt;- substring (timestr, 1, nchar (timestr) - 4)</code></pre>
+timestr &lt;- substring (timestr, 1, nchar (timestr) - 4)
+
+# put the dates and times together
+datesAndTimes &lt;- strptime (paste (datestr, timestr), &quot;%Y%m%d %H%M%S&quot;)</code></pre>
+<p>And finally the data.frame for all results is created.</p>
+<pre class="r"><code># Create the data.frame
+alldata &lt;- data.frame (file = fileNames,date = datesAndTimes, stringsAsFactors = FALSE)</code></pre>
 </div>
 </div>
 

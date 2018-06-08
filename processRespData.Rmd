@@ -241,9 +241,25 @@ If you have multiple files, you may want to analyse all of them and add the resu
 ``` {r readInFileNames}
 # Create list of all csv files in the data/ directory 
 fileNames <- list.files (path = '../data/', pattern = '.csv')
+```
+
+Next, dates and times for all files are extracted.
+
+``` {r getDatesAndTimes}
 # Isolate the important part of the string
 tmp <- unlist (strsplit (fileNames, '_'))
 datestr <- tmp [seq (3, length (tmp), 4)]
 timestr <- tmp [seq (4, length (tmp), 4)]
 timestr <- substring (timestr, 1, nchar (timestr) - 4)
+
+# put the dates and times together
+datesAndTimes <- strptime (paste (datestr, timestr), "%Y%m%d %H%M%S")
 ```
+
+And finally the data.frame for all results is created.
+
+``` {r createDataFrame}
+# Create the data.frame
+alldata <- data.frame (file = fileNames,date = datesAndTimes, stringsAsFactors = FALSE)
+```
+
